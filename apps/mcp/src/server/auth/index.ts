@@ -52,6 +52,56 @@ export async function fetchSession(
 	return result.data
 }
 
+async function apiKeysEqual(
+	actual: string,
+	expected: string,
+): Promise<boolean> {
+	const encoder = new TextEncoder()
+	const [actualDigest, expectedDigest] = await Promise.all([
+		crypto.subtle.digest("SHA-256", encoder.encode(actual)),
+		crypto.subtle.digest("SHA-256", encoder.encode(expected)),
+	])
+	const actualBytes = new Uint8Array(actualDigest)
+	const expectedBytes = new Uint8Array(expectedDigest)
+	let difference = 0
+	for (let index = 0; index < actualBytes.length; index++) {
+		difference |= actualBytes[index] ^ expectedBytes[index]
+	}
+	return difference === 0
+}
+
+export async function validateLocalApiKey(
+	token: string,
+	configuredApiKey: string | undefined,
+	apiUrl: string,
+): Promise<AuthUser | null> {
+	if (!configuredApiKey || !(await apiKeysEqual(token, configuredApiKey))) {
+		return null
+	}
+
+	try {
+		const session = await fetchSession(token, apiUrl)
+		const organization = Reflect.get(session, "org")
+		const organizationId =
+			organization && typeof organization === "object"
+				? Reflect.get(organization, "id")
+				: undefined
+		if (typeof organizationId !== "string" || organizationId.length === 0) {
+			return null
+		}
+
+		return {
+			userId: session.user.id,
+			organizationId,
+			bearerToken: token,
+			scopes: ["local"],
+		}
+	} catch (error) {
+		console.error("Local API key validation error:", error)
+		return null
+	}
+}
+
 export async function validateOAuthToken(
 	token: string,
 	apiUrl: string,

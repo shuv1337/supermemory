@@ -2,7 +2,7 @@ import type { AuthInfo } from "@modelcontextprotocol/server"
 import { createMcpHandler } from "agents/mcp/server"
 import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
-import { validateOAuthToken, type AuthUser } from "./auth"
+import { validateLocalApiKey, validateOAuthToken, type AuthUser } from "./auth"
 import { SupermemoryMCP } from "./legacy-protocol-state"
 import { createSupermemoryServer } from "./server"
 import type { ActorContext, ServerEnv } from "./types"
@@ -58,6 +58,13 @@ app.get("/", (c) => {
 function resourceMetadata(c: Context<{ Bindings: Bindings }>) {
 	const apiUrl = c.env.API_URL || DEFAULT_API_URL
 	const mcpResource = c.env.MCP_RESOURCE || DEFAULT_MCP_RESOURCE
+	if (c.env.AUTH_MODE === "local_api_key") {
+		return c.json({
+			resource: mcpResource,
+			bearer_methods_supported: ["header"],
+			resource_documentation: "https://supermemory.ai/docs/supermemory-mcp/mcp",
+		})
+	}
 
 	return c.json({
 		resource: mcpResource,
@@ -76,6 +83,9 @@ app.get("/.well-known/openai-apps-challenge", (c) => {
 })
 
 app.get("/.well-known/oauth-authorization-server", async (c) => {
+	if (c.env.AUTH_MODE === "local_api_key") {
+		return c.json({ error: "OAuth is disabled for this local server" }, 404)
+	}
 	const apiUrl = c.env.API_URL || DEFAULT_API_URL
 
 	try {
@@ -176,7 +186,10 @@ async function handleMcpRequest(
 
 	if (!token) return unauthorizedResponse(resourceMetadataUrl)
 
-	const authUser = await validateOAuthToken(token, apiUrl, mcpResource)
+	const authUser =
+		c.env.AUTH_MODE === "local_api_key"
+			? await validateLocalApiKey(token, c.env.LOCAL_API_KEY, apiUrl)
+			: await validateOAuthToken(token, apiUrl, mcpResource)
 	if (!authUser) return unauthorizedResponse(resourceMetadataUrl, true)
 
 	const actor: ActorContext = {

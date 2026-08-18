@@ -1,6 +1,6 @@
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose"
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
-import { fetchSession, validateOAuthToken } from "./index"
+import { fetchSession, validateLocalApiKey, validateOAuthToken } from "./index"
 
 const API_URL = "https://api.example.com"
 const ISSUER = `${API_URL}/api/auth`
@@ -106,6 +106,37 @@ describe("MCP authentication", () => {
 
 		await expect(
 			validateOAuthToken("sm_test", API_URL, MCP_RESOURCE, keySet),
+		).resolves.toBeNull()
+		expect(fetchSpy).not.toHaveBeenCalled()
+	})
+
+	it("validates the configured local API key against the local session", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(
+				Response.json({
+					user: { id: "local-user", email: "local@supermemory.local" },
+					org: { id: "local-org", name: "Local" },
+				}),
+			),
+		)
+
+		await expect(
+			validateLocalApiKey("local-key", "local-key", API_URL),
+		).resolves.toEqual({
+			userId: "local-user",
+			organizationId: "local-org",
+			bearerToken: "local-key",
+			scopes: ["local"],
+		})
+	})
+
+	it("rejects an incorrect local API key without an API request", async () => {
+		const fetchSpy = vi.fn()
+		vi.stubGlobal("fetch", fetchSpy)
+
+		await expect(
+			validateLocalApiKey("wrong-key", "local-key", API_URL),
 		).resolves.toBeNull()
 		expect(fetchSpy).not.toHaveBeenCalled()
 	})

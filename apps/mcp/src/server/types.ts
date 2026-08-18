@@ -10,6 +10,8 @@ export interface ActorContext {
 export interface ServerEnv {
 	SPACE_STATE: DurableObjectNamespace<SpaceState>
 	API_URL?: string
+	AUTH_MODE?: "oauth" | "local_api_key"
+	LOCAL_API_KEY?: string
 	MCP_RESOURCE?: string
 	MCP_PUBLIC_ORIGIN?: string
 	ALLOWED_MCP_ORIGIN_HOSTNAMES?: string
